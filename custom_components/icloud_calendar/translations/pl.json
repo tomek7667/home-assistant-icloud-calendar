@@ -28,7 +28,7 @@
       },
       "manual": {
         "title": "iCloud Calendar (CalDAV)",
-        "description": "Dla iCloud: https://caldav.icloud.com/, Apple ID i hasło do aplikacji (account.apple.com → Logowanie i bezpieczeństwo → Hasła do aplikacji).",
+        "description": "Dla iCloud: {icloud_url}, e-mail konta Apple i hasło do aplikacji ({apple_account_url} → Logowanie i bezpieczeństwo → Hasła do aplikacji).",
         "data": {
           "url": "Adres serwera",
           "username": "Nazwa użytkownika",

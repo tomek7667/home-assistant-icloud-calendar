@@ -14,7 +14,14 @@ from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_PASSWORD, CONF_URL, CONF_USERNAME, CONF_VERIFY_SSL
 from homeassistant.helpers import config_validation as cv, selector
 
-from .const import CALDAV_DOMAIN, CONF_SOURCE_ENTRY, DEFAULT_URL, DOMAIN, TIMEOUT
+from .const import (
+    APPLE_ACCOUNT_URL,
+    CALDAV_DOMAIN,
+    CONF_SOURCE_ENTRY,
+    DEFAULT_URL,
+    DOMAIN,
+    TIMEOUT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,6 +122,10 @@ class CalDavConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="manual",
             data_schema=STEP_USER_DATA_SCHEMA,
             errors=errors,
+            description_placeholders={
+                "icloud_url": DEFAULT_URL,
+                "apple_account_url": APPLE_ACCOUNT_URL,
+            },
         )
 
     async def _test_connection(self, user_input: dict[str, Any]) -> str | None:

@@ -14,9 +14,9 @@
     "vobject"
   ],
   "requirements": [
-    "caldav==3.5.0a0",
-    "icalendar==6.3.1",
-    "vobject==0.9.9"
+    "caldav>=3.5.0a0",
+    "icalendar>=6.3.1",
+    "vobject>=0.9.9"
   ],
   "version": "1.0.0"
 }

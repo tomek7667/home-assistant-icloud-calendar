@@ -28,7 +28,7 @@
       },
       "manual": {
         "title": "iCloud Calendar (CalDAV)",
-        "description": "For iCloud use https://caldav.icloud.com/, your Apple ID and an app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords).",
+        "description": "For iCloud use {icloud_url}, your Apple Account email and an app-specific password ({apple_account_url} → Sign-In and Security → App-Specific Passwords).",
         "data": {
           "url": "Server URL",
           "username": "Username",
