@@ -1,0 +1,71 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "To konto jest już skonfigurowane.",
+      "reauth_successful": "Ponowne uwierzytelnienie powiodło się.",
+      "reconfigure_successful": "Połączenie zostało zaktualizowane."
+    },
+    "error": {
+      "cannot_connect": "Nie udało się połączyć.",
+      "invalid_auth": "Nieprawidłowa nazwa użytkownika lub hasło.",
+      "unknown": "Nieoczekiwany błąd."
+    },
+    "step": {
+      "user": {
+        "title": "iCloud Calendar (CalDAV)",
+        "description": "Kalendarze i przypomnienia z iCloud lub innego serwera CalDAV, które możesz dodawać, zmieniać i usuwać w Home Assistant, także pojedyncze wystąpienia wydarzeń cyklicznych.",
+        "menu_options": {
+          "copy_caldav": "Skopiuj ustawienia wbudowanej integracji CalDAV",
+          "manual": "Podaj serwer i konto"
+        }
+      },
+      "copy_caldav": {
+        "title": "Kopiowanie ustawień CalDAV",
+        "description": "Używa tego samego serwera, konta i hasła co wybrany wpis CalDAV. Usuń potem ten wpis, żeby kalendarze nie pojawiały się podwójnie.",
+        "data": {
+          "source_entry": "Wpis CalDAV"
+        }
+      },
+      "manual": {
+        "title": "iCloud Calendar (CalDAV)",
+        "description": "Dla iCloud: https://caldav.icloud.com/, Apple ID i hasło do aplikacji (account.apple.com → Logowanie i bezpieczeństwo → Hasła do aplikacji).",
+        "data": {
+          "url": "Adres serwera",
+          "username": "Nazwa użytkownika",
+          "password": "Hasło",
+          "verify_ssl": "Weryfikuj certyfikat SSL"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Ponowne uwierzytelnienie",
+        "description": "Hasło dla {username} jest nieprawidłowe.",
+        "data": {
+          "password": "Hasło"
+        }
+      },
+      "reconfigure": {
+        "description": "Zaktualizuj połączenie z serwerem CalDAV dla {username}.",
+        "data": {
+          "url": "Adres serwera",
+          "password": "Hasło",
+          "verify_ssl": "Weryfikuj certyfikat SSL"
+        },
+        "data_description": {
+          "password": "Podaj ponownie hasło dla {username}. Zostaw puste tylko, jeśli serwer nie wymaga hasła.",
+          "url": "Adres serwera CalDAV."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unexpected_response": {
+      "message": "Nieoczekiwana odpowiedź serwera CalDAV."
+    },
+    "event_not_found": {
+      "message": "Nie znaleziono wydarzenia {uid} na serwerze."
+    },
+    "changed_elsewhere": {
+      "message": "To wydarzenie zostało w międzyczasie zmienione gdzie indziej. Odśwież kalendarz i spróbuj ponownie."
+    }
+  }
+}

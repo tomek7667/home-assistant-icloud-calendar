@@ -1,0 +1,11 @@
+iCloud Calendar (CalDAV) for Home Assistant
+Copyright 2026 tomek7667
+
+This integration is derived from the CalDAV integration of Home Assistant
+(https://github.com/home-assistant/core, homeassistant/components/caldav),
+Copyright Home Assistant contributors, licensed under the Apache License 2.0.
+
+Changes: event updating and deleting (single events, one occurrence of a
+recurring series, an occurrence and all after it, a whole series), lookup of
+calendar objects without a UID REPORT, read-only calendar detection, copying
+the account from an existing CalDAV entry, and removal of YAML configuration.

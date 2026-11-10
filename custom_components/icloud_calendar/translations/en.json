@@ -1,0 +1,71 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "reauth_successful": "Re-authentication was successful.",
+      "reconfigure_successful": "The connection was updated."
+    },
+    "error": {
+      "cannot_connect": "Failed to connect.",
+      "invalid_auth": "Invalid username or password.",
+      "unknown": "Unexpected error."
+    },
+    "step": {
+      "user": {
+        "title": "iCloud Calendar (CalDAV)",
+        "description": "Calendars and reminders from iCloud or another CalDAV server that you can add, change and delete from Home Assistant, including single occurrences of repeating events.",
+        "menu_options": {
+          "copy_caldav": "Copy the settings of the built-in CalDAV integration",
+          "manual": "Enter the server and account"
+        }
+      },
+      "copy_caldav": {
+        "title": "Copy CalDAV settings",
+        "description": "Uses the same server, account and password as the selected CalDAV entry. Remove that entry afterwards so calendars don't appear twice.",
+        "data": {
+          "source_entry": "CalDAV entry"
+        }
+      },
+      "manual": {
+        "title": "iCloud Calendar (CalDAV)",
+        "description": "For iCloud use https://caldav.icloud.com/, your Apple ID and an app-specific password (account.apple.com → Sign-In and Security → App-Specific Passwords).",
+        "data": {
+          "url": "Server URL",
+          "username": "Username",
+          "password": "Password",
+          "verify_ssl": "Verify SSL certificate"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "The password for {username} is invalid.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "description": "Update the CalDAV server connection for {username}.",
+        "data": {
+          "url": "Server URL",
+          "password": "Password",
+          "verify_ssl": "Verify SSL certificate"
+        },
+        "data_description": {
+          "password": "Enter the password for {username} again. Leave it empty only if the server needs no password.",
+          "url": "The address of the CalDAV server."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "unexpected_response": {
+      "message": "Unexpected response from the CalDAV server."
+    },
+    "event_not_found": {
+      "message": "Could not find the event {uid} on the server."
+    },
+    "changed_elsewhere": {
+      "message": "This event was changed elsewhere in the meantime. Reload the calendar and try again."
+    }
+  }
+}
