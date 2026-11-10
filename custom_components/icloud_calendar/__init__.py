@@ -23,6 +23,11 @@ from homeassistant.exceptions import (
 
 from .const import DOMAIN, TIMEOUT
 
+# Connections kept per host. All calendars of an account share one session and
+# are refreshed together; with urllib3's default of 10, accounts with more
+# calendars logged "Connection pool is full" and reconnected every time.
+POOL_SIZE = 32
+
 type CalDavConfigEntry = ConfigEntry[DAVClient]
 
 
@@ -59,9 +64,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: CalDavConfigEntry) -> No
     except DAVError as err:
         raise ConfigEntryNotReady("CalDAV client error") from err
 
+    _widen_pool(client)
     entry.runtime_data = client
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+
+def _widen_pool(client: DAVClient) -> None:
+    """Give the client's HTTP session room for one connection per calendar."""
+    session = getattr(client, "session", None)
+    if caldav_requests.__name__ != "requests" or not hasattr(session, "mount"):
+        return  # niquests multiplexes, and other sessions are left alone
+    for prefix in ("https://", "http://"):
+        session.mount(prefix, caldav_requests.adapters.HTTPAdapter(pool_maxsize=POOL_SIZE))
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
