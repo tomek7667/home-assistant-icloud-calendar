@@ -240,12 +240,11 @@ class WebDavTodoListEntity(TodoListEntity):
         else:
             vtodo.pop("DESCRIPTION", None)
         try:
+            # The item was just loaded from its URL; If-Match with its ETag makes
+            # sure it still exists unchanged. (no_create=True would check that
+            # with a UID search, which iCloud refuses with 412.)
             await self.hass.async_add_executor_job(
-                partial(
-                    todo.save,
-                    no_create=True,
-                    obj_type="todo",
-                ),
+                partial(todo.save, precondition="auto"),
             )
             self._writes += 1
             # refreshing async otherwise it would take too much time

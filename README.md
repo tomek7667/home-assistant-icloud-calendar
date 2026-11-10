@@ -15,7 +15,7 @@ Home Assistant's built-in CalDAV integration can show events and add new ones, b
 - **Safe against parallel changes.** Every write sends the object's ETag. If the event was changed on your iPhone or Mac in the meantime, the server refuses the write and Home Assistant tells you to reload, so nothing is overwritten.
 - **Repeat rule shown in the editor.** Occurrences carry their series' rule, so the panel shows "Every week on Tuesday" and offers the scope choice.
 - **Read-only calendars stay read-only.** Shared calendars you can't write to don't get edit or delete buttons.
-- **Reminders** (iCloud's VTODO lists) work as in the built-in integration: add, change, complete and delete to-dos.
+- **Reminders** (to-do lists) as in the built-in integration: add, change, complete and delete to-dos. On iCloud, changing a to-do works here too; with Home Assistant 2026.11 the built-in integration fails there with `412 Precondition Failed`.
 - **Easy switch.** If the built-in CalDAV integration is set up, the account can be copied from it, so you don't need to type the password again.
 - **Translations:** English and Polish.
 
@@ -69,6 +69,7 @@ A repeating event is one calendar object on the server: the series (with its `RR
 - **Invitations haven't been tested.** Editing an event someone invited you to changes your copy; don't expect the organizer or other attendees to be notified.
 - **Changes from other devices show up on the next fetch.** The Calendar panel reads iCloud each time it's opened or moved to another week. The entity state (next event) is refreshed every 15 minutes, as in the built-in integration.
 - **"All events" of a series** is reached with *This and all future events* on the first occurrence. Home Assistant's dialog has no separate option for it.
+- **iCloud reminders:** iCloud only offers its old reminders list over CalDAV (it shows up as "Reminders ⚠️"). Lists in the current Reminders app can't be reached this way.
 - **No YAML.** The `calendar: - platform: caldav` YAML setup isn't supported. Use the config flow.
 - iCloud refuses CalDAV's UID search (`412 Precondition Failed`), so events are found by the URL seen when listing them or by `<UID>.ics`, which is how iCloud and Apple clients name them. On other servers a UID search is used, then a full scan as the last resort.
 
