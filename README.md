@@ -12,6 +12,8 @@ Home Assistant's built-in CalDAV integration can show events and add new ones, b
   - *This and all future events* ends the series the day before and starts a new one with your changes. On the first occurrence it changes or deletes the whole series.
   - All-day, time-zone and floating events are supported, including series that cross a daylight saving change.
 - **Nothing else gets lost.** Alarms, attendees, URLs, Apple's own properties and changes to other occurrences are kept. Only the fields the editor shows are changed (title, start, end, description, location, repeat rule).
+- **Few requests, so iCloud doesn't throttle you.** The built-in integration asks iCloud for every calendar on every dashboard refresh; with many calendars and a wall panel, iCloud starts answering `503` and can even refuse the password for a while. This integration reads the account the way Apple's own clients do: one request every 5 minutes checks all calendars for changes (CTag), only changed calendars are fetched again, and repeating events are expanded locally. Opening dashboards is served from that cache.
+- **Rides out iCloud trouble.** When iCloud asks to wait (`503`/`429` with Retry-After), Home Assistant waits that long and keeps showing the cached events instead of going unavailable. A calendar iCloud fails to read only affects that calendar, and a calendar iCloud can't even describe at startup is set up as last seen and comes back on its own.
 - **Safe against parallel changes.** Every write sends the object's ETag. If the event was changed on your iPhone or Mac in the meantime, the server refuses the write and Home Assistant tells you to reload, so nothing is overwritten.
 - **Repeat rule shown in the editor.** Occurrences carry their series' rule, so the panel shows "Every week on Tuesday" and offers the scope choice.
 - **Read-only calendars stay read-only.** Shared calendars you can't write to don't get edit or delete buttons.
@@ -67,7 +69,7 @@ A repeating event is one calendar object on the server: the series (with its `RR
 
 - **Only the fields of Home Assistant's editor can be changed.** Alarms, attendees, travel time, attachments and URLs are kept but can't be edited here.
 - **Invitations haven't been tested.** Editing an event someone invited you to changes your copy; don't expect the organizer or other attendees to be notified.
-- **Changes from other devices show up on the next fetch.** The Calendar panel reads iCloud each time it's opened or moved to another week. The entity state (next event) is refreshed every 15 minutes, as in the built-in integration.
+- **Changes from other devices show up within a minute or so** when a dashboard or the Calendar panel asks for events, and within 5 minutes in the entity state (next event). Some shared calendars have no change tag; they're re-read every 5 minutes.
 - **"All events" of a series** is reached with *This and all future events* on the first occurrence. Home Assistant's dialog has no separate option for it.
 - **iCloud reminders:** iCloud only offers its old reminders list over CalDAV (it shows up as "Reminders ⚠️"). Lists in the current Reminders app can't be reached this way.
 - **No YAML.** The `calendar: - platform: caldav` YAML setup isn't supported. Use the config flow.

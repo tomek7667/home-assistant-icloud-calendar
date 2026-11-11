@@ -23,7 +23,9 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import CalDavConfigEntry
-from .api import async_get_calendars, get_attr_value, find_object
+from .api import find_object, get_attr_value
+from .const import DOMAIN
+from .store import AccountStore, Throttled
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,17 +52,22 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the CalDav todo platform for a config entry."""
-    calendars = await async_get_calendars(hass, entry.runtime_data, SUPPORTED_COMPONENT)
+    store = entry.runtime_data.store
     async_add_entities(
         (
-            WebDavTodoListEntity(
-                calendar,
-                calendar_name,
-                entry.entry_id,
-            )
-            for calendar, calendar_name in calendars
+            WebDavTodoListEntity(info.calendar, info.name, entry.entry_id, store)
+            for info in store.calendars.values()
+            if SUPPORTED_COMPONENT in info.components
         ),
         True,
+    )
+
+
+def _throttled_error(err: Throttled) -> HomeAssistantError:
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="throttled",
+        translation_placeholders={"minutes": str(err.minutes)},
     )
 
 
@@ -143,10 +150,15 @@ class WebDavTodoListEntity(TodoListEntity):
     )
 
     def __init__(
-        self, calendar: Calendar, calendar_name: str | None, config_entry_id: str
+        self,
+        calendar: Calendar,
+        calendar_name: str | None,
+        config_entry_id: str,
+        store: AccountStore,
     ) -> None:
         """Initialize WebDavTodoListEntity."""
         self._calendar = calendar
+        self._store = store
         self._attr_name = (calendar_name or "Unknown").capitalize()
         self._attr_unique_id = f"{config_entry_id}-{calendar.id}"
         self._sync_token: str | None = None
@@ -156,6 +168,15 @@ class WebDavTodoListEntity(TodoListEntity):
 
     async def async_update(self) -> None:
         """Update To-do list entity state."""
+        if self._store.throttle.left() > 0:
+            return  # keep the items while the server asks to wait
+        try:
+            await self._async_update()
+        except DAVError as err:
+            if self._store.throttle.note(err) is None:
+                raise
+
+    async def _async_update(self) -> None:
         changed, sync_token = await self.hass.async_add_executor_job(
             _get_changes, self._calendar, self._sync_token
         )
@@ -188,11 +209,13 @@ class WebDavTodoListEntity(TodoListEntity):
             item_data["description"] = description
         try:
             await self.hass.async_add_executor_job(
-                partial(self._calendar.add_todo, **item_data),
+                partial(self._store.call, self._calendar.add_todo, **item_data),
             )
             self._writes += 1
             # refreshing async otherwise it would take too much time
             self.hass.async_create_task(self.async_update_ha_state(force_refresh=True))
+        except Throttled as err:
+            raise _throttled_error(err) from err
         except (
             caldav_requests.exceptions.ConnectionError,
             caldav_requests.exceptions.Timeout,
@@ -208,9 +231,11 @@ class WebDavTodoListEntity(TodoListEntity):
             todo = cast(
                 Todo,
                 await self.hass.async_add_executor_job(
-                    partial(find_object, self._calendar, uid, todo=True)
+                    partial(self._store.call, find_object, self._calendar, uid, todo=True)
                 ),
             )
+        except Throttled as err:
+            raise _throttled_error(err) from err
         except NotFoundError as err:
             raise HomeAssistantError(f"Could not find To-do item {uid}") from err
         except (
@@ -244,11 +269,13 @@ class WebDavTodoListEntity(TodoListEntity):
             # sure it still exists unchanged. (no_create=True would check that
             # with a UID search, which iCloud refuses with 412.)
             await self.hass.async_add_executor_job(
-                partial(todo.save, precondition="auto"),
+                partial(self._store.call, todo.save, precondition="auto"),
             )
             self._writes += 1
             # refreshing async otherwise it would take too much time
             self.hass.async_create_task(self.async_update_ha_state(force_refresh=True))
+        except Throttled as err:
+            raise _throttled_error(err) from err
         except (
             caldav_requests.exceptions.ConnectionError,
             caldav_requests.exceptions.Timeout,
@@ -261,13 +288,15 @@ class WebDavTodoListEntity(TodoListEntity):
         """Delete To-do items."""
         tasks = (
             self.hass.async_add_executor_job(
-                partial(find_object, self._calendar, uid, todo=True)
+                partial(self._store.call, find_object, self._calendar, uid, todo=True)
             )
             for uid in uids
         )
 
         try:
             items = cast(list[Todo], await asyncio.gather(*tasks))
+        except Throttled as err:
+            raise _throttled_error(err) from err
         except NotFoundError as err:
             raise HomeAssistantError("Could not find To-do item") from err
         except (
@@ -280,7 +309,9 @@ class WebDavTodoListEntity(TodoListEntity):
         # Run serially as some CalDAV servers do not support concurrent modifications
         for item in items:
             try:
-                await self.hass.async_add_executor_job(item.delete)
+                await self.hass.async_add_executor_job(self._store.call, item.delete)
+            except Throttled as err:
+                raise _throttled_error(err) from err
             except (
                 caldav_requests.exceptions.ConnectionError,
                 caldav_requests.exceptions.Timeout,

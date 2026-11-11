@@ -66,6 +66,9 @@
     },
     "changed_elsewhere": {
       "message": "This event was changed elsewhere in the meantime. Reload the calendar and try again."
+    },
+    "throttled": {
+      "message": "The calendar server asked Home Assistant to wait before asking again. Try again in {minutes} minutes."
     }
   }
 }

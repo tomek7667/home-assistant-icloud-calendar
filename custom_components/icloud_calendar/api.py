@@ -1,76 +1,11 @@
 """Library for working with CalDAV api."""
 
-from typing import cast
 from urllib.parse import quote
 
 from caldav.calendarobjectresource import CalendarObjectResource, Event, Todo
 from caldav.collection import Calendar
-from caldav.davclient import DAVClient
-from caldav.elements import ical
-from caldav.elements.base import BaseElement
 from caldav.lib.error import DAVError, NotFoundError
-from caldav.lib.namespace import ns
 from caldav.lib.url import URL
-
-from homeassistant.core import HomeAssistant
-
-# Privileges that allow changing calendar objects (rfc3744)
-_WRITE_PRIVILEGES = {"write", "write-content", "all"}
-
-
-class CurrentUserPrivilegeSet(BaseElement):
-    """The DAV:current-user-privilege-set property (rfc3744 5.4)."""
-
-    tag = ns("D", "current-user-privilege-set")
-
-
-async def async_get_calendars(
-    hass: HomeAssistant, client: DAVClient, component: str
-) -> list[tuple[Calendar, str | None]]:
-    """Get all calendars that support the specified component."""
-
-    def _get_calendars() -> list[tuple[Calendar, str | None]]:
-        calendars = cast(list[Calendar], client.get_principal().get_calendars())
-        return [
-            (calendar, cast(str | None, calendar.get_display_name()))
-            for calendar in calendars
-            if component in cast(list[str], calendar.get_supported_components())
-        ]
-
-    return await hass.async_add_executor_job(_get_calendars)
-
-
-async def async_get_calendar_color(
-    hass: HomeAssistant, calendar: Calendar
-) -> str | None:
-    """Get the color of a calendar, None if it has none."""
-    color = cast(
-        str | None,
-        await hass.async_add_executor_job(calendar.get_property, ical.CalendarColor()),
-    )
-    # Apple Calendar, DAVx5 and SOGo append an alpha channel.
-    if color and color.startswith("#") and len(color) == 9:
-        return color[:7]
-    return color
-
-
-def calendar_is_writable(calendar: Calendar) -> bool:
-    """Return whether the user may change objects in a calendar (blocking).
-
-    Shared calendars can be read-only. When the server doesn't report the
-    privileges, writing is allowed and the server has the last word.
-    """
-    try:
-        response = calendar._query_properties([CurrentUserPrivilegeSet()], depth=0)  # noqa: SLF001
-    except DAVError:
-        return True
-    tree = getattr(response, "tree", None)
-    if tree is None:
-        return True
-    names = {el.tag.rsplit("}", 1)[-1] for el in tree.iter() if isinstance(el.tag, str)}
-    if "privilege" not in names:
-        return True
-    return bool(names & _WRITE_PRIVILEGES)
 
 
 def find_object(

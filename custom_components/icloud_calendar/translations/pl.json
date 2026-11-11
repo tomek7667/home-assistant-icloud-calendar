@@ -66,6 +66,9 @@
     },
     "changed_elsewhere": {
       "message": "To wydarzenie zostało w międzyczasie zmienione gdzie indziej. Odśwież kalendarz i spróbuj ponownie."
+    },
+    "throttled": {
+      "message": "Serwer kalendarza poprosił o przerwę w zapytaniach. Spróbuj ponownie za {minutes} min."
     }
   }
 }

@@ -1,13 +1,13 @@
 """Calendar platform: iCloud (and other CalDAV) calendars you can edit from Home Assistant."""
 
-import asyncio
+from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 import logging
 from typing import Any, override
 
 from caldav.calendarobjectresource import CalendarObjectResource
-from caldav.lib.error import DAVError, NotFoundError
+from caldav.lib.error import AuthorizationError, DAVError, NotFoundError
 from caldav.lib.http_sync import requests as caldav_requests
 from icalendar import Calendar as ICalendar
 
@@ -17,7 +17,7 @@ from homeassistant.components.calendar import (
     CalendarEntityFeature,
     CalendarEvent,
 )
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import async_generate_entity_id
@@ -25,15 +25,13 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import CalDavConfigEntry
-from .api import async_get_calendar_color, async_get_calendars, calendar_is_writable, find_object
+from .api import find_object
 from .const import DOMAIN
-from .coordinator import CalDavUpdateCoordinator
+from .coordinator import AccountCoordinator
 from .editing import EditError, EditResult, delete_event, get_master, update_event
+from .store import CalendarInfo, Throttled, calendar_color
 
 _LOGGER = logging.getLogger(__name__)
-
-# Number of days to look ahead for next event when configured by ConfigEntry
-CONFIG_ENTRY_DEFAULT_DAYS = 7
 
 # Only allow VCALENDARs that support this component type
 SUPPORTED_COMPONENT = "VEVENT"
@@ -58,57 +56,46 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the calendar platform for a config entry."""
-    calendars = [
-        (calendar, name)
-        for calendar, name in await async_get_calendars(hass, entry.runtime_data, SUPPORTED_COMPONENT)
-        if name
-    ]
-    # One privilege request per calendar; run them side by side
-    writable_flags = await asyncio.gather(
-        *(hass.async_add_executor_job(calendar_is_writable, calendar) for calendar, _ in calendars)
-    )
-    entities = []
-    for (calendar, calendar_name), writable in zip(calendars, writable_flags, strict=True):
-        entities.append(
-            WebDavCalendarEntity(
-                calendar_name,
-                async_generate_entity_id(ENTITY_ID_FORMAT, calendar_name, hass=hass),
-                CalDavUpdateCoordinator(
-                    hass,
-                    entry,
-                    calendar=calendar,
-                    calendar_name=calendar_name,
-                    days=CONFIG_ENTRY_DEFAULT_DAYS,
-                    include_all_day=True,
-                    search=None,
-                ),
-                unique_id=f"{entry.entry_id}-{calendar.id}",
-                writable=writable,
-            )
+    data = entry.runtime_data
+    async_add_entities(
+        WebDavCalendarEntity(
+            info,
+            async_generate_entity_id(ENTITY_ID_FORMAT, info.name, hass=hass),
+            data.coordinator,
+            unique_id=f"{entry.entry_id}-{info.calendar.id}",
         )
-    async_add_entities(entities, True)
+        for info in data.store.calendars.values()
+        if SUPPORTED_COMPONENT in info.components and info.name
+    )
 
 
-class WebDavCalendarEntity(CoordinatorEntity[CalDavUpdateCoordinator], CalendarEntity):
+def _throttled_error(err: Throttled) -> HomeAssistantError:
+    return HomeAssistantError(
+        translation_domain=DOMAIN,
+        translation_key="throttled",
+        translation_placeholders={"minutes": str(err.minutes)},
+    )
+
+
+class WebDavCalendarEntity(CoordinatorEntity[AccountCoordinator], CalendarEntity):
     """A calendar on a CalDAV server."""
 
     def __init__(
         self,
-        name: str | None,
+        info: CalendarInfo,
         entity_id: str,
-        coordinator: CalDavUpdateCoordinator,
-        unique_id: str | None = None,
-        writable: bool = True,
+        coordinator: AccountCoordinator,
+        unique_id: str,
     ) -> None:
         """Create the calendar entity."""
         super().__init__(coordinator)
         self.entity_id = entity_id
-        self._event: CalendarEvent | None = None
-        self._attr_name = name
-        if unique_id is not None:
-            self._attr_unique_id = unique_id
+        self._key = info.key
+        self._calendar = info.calendar
+        self._attr_name = info.name
+        self._attr_unique_id = unique_id
         # Read-only (e.g. shared) calendars get no editing buttons
-        self._attr_supported_features = WRITE_FEATURES if writable else CalendarEntityFeature(0)
+        self._attr_supported_features = WRITE_FEATURES if info.writable else CalendarEntityFeature(0)
 
     @override
     async def async_prepare_to_add_to_hass(self) -> None:
@@ -117,29 +104,40 @@ class WebDavCalendarEntity(CoordinatorEntity[CalDavUpdateCoordinator], CalendarE
         The color only applies when an entity is first registered.
         """
         await super().async_prepare_to_add_to_hass()
-        if self.unique_id is None or er.async_get(self.hass).async_get_entity_id(
-            self.platform.domain, self.platform.platform_name, self.unique_id
+        if er.async_get(self.hass).async_get_entity_id(
+            self.platform.domain, self.platform.platform_name, self.unique_id or ""
         ):
             return
-        try:
-            self._attr_initial_color = await async_get_calendar_color(
-                self.hass, self.coordinator.calendar
+        if self.coordinator.store.throttle.left() <= 0:
+            self._attr_initial_color = await self.hass.async_add_executor_job(
+                calendar_color, self.coordinator.store.client, self._calendar
             )
-        except (caldav_requests.exceptions.RequestException, DAVError) as err:
-            _LOGGER.debug("Cannot read the color of %s: %s", self.name, err)
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return whether the calendar could be read."""
+        return super().available and self._key not in self.coordinator.unreadable
 
     @property
     @override
     def event(self) -> CalendarEvent | None:
         """Return the next upcoming event."""
-        return self._event
+        return (self.coordinator.data or {}).get(self._key)
 
     @override
     async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
         """Get all events in a specific time frame."""
-        return await self.coordinator.async_get_events(hass, start_date, end_date)
+        try:
+            return await hass.async_add_executor_job(
+                self.coordinator.events, self._key, start_date, end_date
+            )
+        except Throttled as err:
+            raise _throttled_error(err) from err
+        except _NETWORK_ERRORS as err:
+            raise HomeAssistantError(f"CalDAV error: {err}") from err
 
     @override
     async def async_create_event(self, **kwargs: Any) -> None:
@@ -155,13 +153,12 @@ class WebDavCalendarEntity(CoordinatorEntity[CalDavUpdateCoordinator], CalendarE
             item_data["location"] = location
         if rrule := kwargs.get("rrule"):
             item_data["rrule"] = rrule
-        try:
-            await self.hass.async_add_executor_job(
-                partial(self.coordinator.calendar.add_event, **item_data),
-            )
-        except _NETWORK_ERRORS as err:
-            raise HomeAssistantError(f"CalDAV save error: {err}") from err
-        await self.coordinator.async_request_refresh()
+        store = self.coordinator.store
+
+        def _create() -> None:
+            store.call(partial(self._calendar.add_event, **item_data))
+
+        await self._async_write(_create)
 
     @override
     async def async_update_event(
@@ -199,59 +196,63 @@ class WebDavCalendarEntity(CoordinatorEntity[CalDavUpdateCoordinator], CalendarE
             ),
         )
 
-    async def _async_edit(self, uid: str, change) -> None:
+    async def _async_edit(self, uid: str, change: Callable[[ICalendar], EditResult]) -> None:
         """Fetch the object holding ``uid``, change it, and write it back."""
-        calendar = self.coordinator.calendar
+        calendar = self._calendar
+        store = self.coordinator.store
+        urls = store.urls[self._key]
 
         def _edit() -> None:
             try:
-                obj = find_object(calendar, uid, self.coordinator.urls.get(uid))
+                obj = store.call(find_object, calendar, uid, urls.get(uid))
             except NotFoundError as err:
                 raise HomeAssistantError(
-                    translation_domain=DOMAIN, translation_key="event_not_found", translation_placeholders={"uid": uid}
+                    translation_domain=DOMAIN,
+                    translation_key="event_not_found",
+                    translation_placeholders={"uid": uid},
                 ) from err
             ical: ICalendar = obj.icalendar_instance
             try:
-                result: EditResult = change(ical)
+                result = change(ical)
             except EditError as err:
                 raise HomeAssistantError(str(err)) from err
             # The ETag (or Schedule-Tag) is sent as a precondition, so a change
             # made elsewhere since the object was read isn't overwritten.
             if result.delete_resource:
-                obj.delete(precondition="auto")
-                self.coordinator.urls.pop(uid, None)
+                store.call(obj.delete, precondition="auto")
+                urls.pop(uid, None)
             else:
                 ical.add_missing_timezones()
                 obj.icalendar_instance = ical
-                obj.save(increase_seqno=False, precondition="auto")
-            self.coordinator.rules.pop(uid, None)  # the series' rule may have changed
+                store.call(obj.save, increase_seqno=False, precondition="auto")
             for new_cal in result.new_calendars:
                 new_cal.add_missing_timezones()
-                saved: CalendarObjectResource = calendar.save_event(ical=new_cal.to_ical().decode())
+                saved: CalendarObjectResource = store.call(
+                    calendar.save_event, ical=new_cal.to_ical().decode()
+                )
                 if (master := get_master(new_cal)) is not None and saved.url:
-                    self.coordinator.urls[str(master["UID"])] = saved.url
+                    urls[str(master["UID"])] = str(saved.url)
 
+        await self._async_write(_edit)
+
+    async def _async_write(self, write: Callable[[], None]) -> None:
+        """Run a change on the server, then show it."""
+        store = self.coordinator.store
         try:
-            await self.hass.async_add_executor_job(_edit)
+            await self.hass.async_add_executor_job(write)
         except HomeAssistantError:
             raise
+        except Throttled as err:
+            raise _throttled_error(err) from err
+        except AuthorizationError as err:
+            raise HomeAssistantError(f"CalDAV authorization error: {err}") from err
         except _NETWORK_ERRORS as err:
             if "412" in str(err) or type(err).__name__ == "ETagMismatchError":
                 raise HomeAssistantError(
                     translation_domain=DOMAIN, translation_key="changed_elsewhere"
                 ) from err
             raise HomeAssistantError(f"CalDAV save error: {err}") from err
+        finally:
+            # Even a failed write may have changed something
+            store.invalidate(self._key)
         await self.coordinator.async_request_refresh()
-
-    @callback
-    @override
-    def _handle_coordinator_update(self) -> None:
-        """Update event data."""
-        self._event = self.coordinator.data
-        super()._handle_coordinator_update()
-
-    @override
-    async def async_added_to_hass(self) -> None:
-        """When entity is added to hass update state from existing coordinator data."""
-        await super().async_added_to_hass()
-        self._handle_coordinator_update()
